@@ -1,15 +1,13 @@
 package name.abuchen.portfolio.ui.preferences;
 
 import java.util.Optional;
-import java.util.function.Consumer;
 
-import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.layout.GridDataFactory;
 import org.eclipse.jface.layout.GridLayoutFactory;
 import org.eclipse.jface.preference.PreferencePage;
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.events.SelectionListener;
+import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
@@ -24,16 +22,18 @@ import name.abuchen.portfolio.online.impl.PortfolioPerformanceFeed;
 import name.abuchen.portfolio.ui.Messages;
 import name.abuchen.portfolio.ui.PortfolioPlugin;
 import name.abuchen.portfolio.ui.util.DesktopAPI;
-import name.abuchen.portfolio.ui.util.swt.StyledLabel;
+import name.abuchen.portfolio.ui.util.OAuthHelper;
 
 public class PPIDPreferencePage extends PreferencePage
 {
+    private static final String EMPTY_USER_TEXT = "-"; //$NON-NLS-1$
+
     private final OAuthClient oauthClient = OAuthClient.INSTANCE;
 
     private Label user;
     private Button action;
 
-    private Runnable updateListener = () -> Display.getDefault().asyncExec(this::triggerUpdate);
+    private final Runnable updateListener = () -> Display.getDefault().asyncExec(this::triggerUpdate);
 
     public PPIDPreferencePage()
     {
@@ -48,49 +48,49 @@ public class PPIDPreferencePage extends PreferencePage
         this.oauthClient.addStatusListener(updateListener);
         parent.addDisposeListener(event -> oauthClient.removeStatusListener(updateListener));
 
-        Composite area = new Composite(parent, SWT.NONE);
+        var area = new Composite(parent, SWT.NONE);
         GridLayoutFactory.swtDefaults().numColumns(2).spacing(5, 10).applyTo(area);
 
-        // If we set the description on the preference page itself, then the
-        // layout of the page is broken.
-        var description = new StyledLabel(area, SWT.WRAP);
-        GridDataFactory.swtDefaults().span(2, 1).hint(400, SWT.DEFAULT).applyTo(description);
-        description.setText(Messages.PrefDescriptionPortfolioPerformanceID);
-
+        new DescriptionFieldEditor(Messages.PrefDescriptionPortfolioPerformanceID, area);
+        
         var label = new Label(area, SWT.NONE);
         label.setText(Messages.LabelUser);
 
         user = new Label(area, SWT.NONE);
         GridDataFactory.fillDefaults().grab(true, false).applyTo(user);
-        user.setText("-"); //$NON-NLS-1$
+        user.setText(EMPTY_USER_TEXT);
 
         action = new Button(area, SWT.NONE);
         GridDataFactory.swtDefaults().align(SWT.BEGINNING, SWT.CENTER).span(2, 1).applyTo(action);
         action.setEnabled(false);
         action.setText(Messages.CmdLogin);
-        action.addSelectionListener(SelectionListener.widgetSelectedAdapter(event -> {
-            try
+        action.addSelectionListener(new SelectionAdapter()
+        {
+            @Override
+            public void widgetSelected(org.eclipse.swt.events.SelectionEvent event)
             {
-                if (oauthClient.isAuthenticated())
+                try
                 {
-                    run(() -> {
-                        oauthClient.signOut();
-                        return null;
-                    }, (var o) -> triggerUpdate());
+                    if (oauthClient.isAuthenticated())
+                    {
+                        OAuthHelper.run(() -> {
+                            oauthClient.signOut();
+                            return null;
+                        }, (var o) -> triggerUpdate());
+                    }
+                    else
+                    {
+                        action.setEnabled(false);
+                        oauthClient.signIn(DesktopAPI::browse);
+                    }
                 }
-                else
+                catch (AuthenticationException e)
                 {
-                    action.setEnabled(false);
-                    oauthClient.signIn(DesktopAPI::browse);
+                    PortfolioPlugin.log(e);
+                    MessageDialog.openError(Display.getDefault().getActiveShell(), Messages.LabelError, e.getMessage());
                 }
             }
-            catch (AuthenticationException e)
-            {
-                PortfolioPlugin.log(e);
-                MessageDialog.openError(Display.getCurrent().getActiveShell(), Messages.LabelError, e.getMessage());
-            }
-
-        }));
+        });
 
         triggerUpdate();
 
@@ -107,11 +107,11 @@ public class PPIDPreferencePage extends PreferencePage
 
         if (!isLoading && isAuthenticated)
         {
-            run(oauthClient::getAPIAccessToken, this::updateUserAndPlan);
+            OAuthHelper.run(oauthClient::getAPIAccessToken, this::updateUserAndPlan);
         }
         else
         {
-            user.setText("-"); //$NON-NLS-1$
+            user.setText(EMPTY_USER_TEXT);
         }
 
         action.setEnabled(!isLoading);
@@ -122,34 +122,12 @@ public class PPIDPreferencePage extends PreferencePage
     {
         if (accessToken.isPresent())
         {
-            user.setText(accessToken.get().getClaims().getSub() + " (" //$NON-NLS-1$
-                            + accessToken.get().getClaims().getEmail() + ")"); //$NON-NLS-1$
+            var claims = accessToken.get().getClaims();
+            user.setText(claims.getEmail());
         }
         else
         {
-            user.setText("-"); //$NON-NLS-1$
+            user.setText(EMPTY_USER_TEXT);
         }
-    }
-
-    @FunctionalInterface
-    public interface AccessTokenRunnable<T>
-    {
-        T get() throws AuthenticationException;
-    }
-
-    private <T> void run(AccessTokenRunnable<T> supplier, Consumer<T> consumer)
-    {
-        Job.createSystem("Asynchronously retrieve token", monitor -> { //$NON-NLS-1$
-            try
-            {
-                var result = supplier.get();
-                Display.getDefault().asyncExec(() -> consumer.accept(result));
-            }
-            catch (AuthenticationException e)
-            {
-                Display.getDefault().asyncExec(() -> MessageDialog.openError(Display.getCurrent().getActiveShell(),
-                                Messages.LabelError, e.getMessage()));
-            }
-        }).schedule();
     }
 }

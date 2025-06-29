@@ -173,3 +173,7 @@ pyBlockDev
 mikaelpeltier
 Selevra
 itshukychen
+elho
+emanueldejanu
+FlorentG74
+jan-moeller

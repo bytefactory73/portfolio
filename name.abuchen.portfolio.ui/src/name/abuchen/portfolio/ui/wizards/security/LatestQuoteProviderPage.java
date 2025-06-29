@@ -133,9 +133,9 @@ public class LatestQuoteProviderPage extends AbstractQuoteProviderPage
     private Label valueDaysLow;
     private Label valueVolume;
 
-    public LatestQuoteProviderPage(final EditSecurityModel model, BindingHelper bindings)
+    public LatestQuoteProviderPage(final EditSecurityModel model, EditSecurityCache cache, BindingHelper bindings)
     {
-        super(model, bindings);
+        super(model, cache, bindings);
 
         setTitle(Messages.EditWizardLatestQuoteFeedTitle);
 
@@ -199,6 +199,12 @@ public class LatestQuoteProviderPage extends AbstractQuoteProviderPage
     protected String getJSONDateFormatPropertyName()
     {
         return GenericJSONQuoteFeed.DATE_FORMAT_PROPERTY_NAME_LATEST;
+    }
+
+    @Override
+    protected String getJSONDateTimezonePropertyName()
+    {
+        return GenericJSONQuoteFeed.DATE_TIMEZONE_PROPERTY_NAME_LATEST;
     }
 
     @Override

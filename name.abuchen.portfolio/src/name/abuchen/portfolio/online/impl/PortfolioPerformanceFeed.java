@@ -4,9 +4,11 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.text.MessageFormat;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,6 +20,7 @@ import org.apache.hc.core5.http.HttpStatus;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
+import org.osgi.framework.FrameworkUtil;
 
 import name.abuchen.portfolio.Messages;
 import name.abuchen.portfolio.PortfolioLog;
@@ -29,15 +32,23 @@ import name.abuchen.portfolio.oauth.AccessToken;
 import name.abuchen.portfolio.oauth.AuthenticationException;
 import name.abuchen.portfolio.oauth.OAuthClient;
 import name.abuchen.portfolio.online.AuthenticationExpiredException;
+import name.abuchen.portfolio.online.FeedConfigurationException;
 import name.abuchen.portfolio.online.QuoteFeed;
 import name.abuchen.portfolio.online.QuoteFeedData;
+import name.abuchen.portfolio.online.QuoteFeedException;
 import name.abuchen.portfolio.online.RateLimitExceededException;
-import name.abuchen.portfolio.online.SecurityNotSupportedException;
+import name.abuchen.portfolio.util.TradeCalendarManager;
 import name.abuchen.portfolio.util.WebAccess;
 import name.abuchen.portfolio.util.WebAccess.WebAccessException;
 
 public final class PortfolioPerformanceFeed implements QuoteFeed
 {
+    private static class CachedResponse
+    {
+        LocalDate start;
+        String json;
+    }
+
     public static final String ID = "PP"; //$NON-NLS-1$
 
     private static final String ENDPOINT = "api.portfolio-performance.info"; //$NON-NLS-1$
@@ -55,6 +66,7 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
                     "AMZN", // Amazon
                     "NVD.F", // Nvidia
                     "MBG.DE", // Mercedes Benz
+                    "DTG.DE", // Daimler Truck Holding
                     "IQQY.DE", // iShares Core MSCI Europe UCITS ETF EUR (Dist)
                     "SXRS.DE", // iShares Diversified Commodity Swap UCITS ETF
                     "EUNH.DE", // iShares Core Euro Government Bond UCITS ETF
@@ -64,6 +76,8 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
     );
 
     private static final OAuthClient oauthClient = OAuthClient.INSTANCE;
+
+    private final PageCache<CachedResponse> cache = new PageCache<>();
 
     @Override
     public String getId()
@@ -99,14 +113,66 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
     }
 
     @Override
-    public QuoteFeedData getHistoricalQuotes(Security security, boolean collectRawResponse)
+    public QuoteFeedData getHistoricalQuotes(Security security, boolean collectRawResponse) throws QuoteFeedException
     {
+        if (security.getTickerSymbol() == null)
+        {
+            return QuoteFeedData.withError(
+                            new IOException(MessageFormat.format(Messages.MsgMissingTickerSymbol, security.getName())));
+        }
+
         LocalDate quoteStartDate = null;
 
         if (!security.getPrices().isEmpty())
         {
+            var lastPriceDate = security.getPrices().get(security.getPrices().size() - 1).getDate();
+
+            // skip the download if
+            // a) the configuration has not changed and we therefore can assume
+            // historical prices have been provided by this feed *and*
+            // b) there cannot be a newer price available on the server
+
+            var configChanged = security.getEphemeralData().getFeedConfigurationChanged();
+            var feedUpdate = security.getEphemeralData().getFeedLastUpdate();
+            var configHasNotChanged = configChanged.isEmpty()
+                            || (feedUpdate.isPresent() && feedUpdate.get().isAfter(configChanged.get()));
+
+            if (configHasNotChanged)
+            {
+                var utcNow = ZonedDateTime.now(ZoneOffset.UTC);
+                var utcToday = utcNow.toLocalDate();
+
+                // Check if symbol ends with ".TG" (Tradegate) and if it's after
+                // 16:00 UTC
+                var isTradegate = security.getTickerSymbol().endsWith(".TG"); //$NON-NLS-1$
+                var after16UTC = utcNow.getHour() > 15;
+
+                // For EU equities, it will be available only the next day.
+                // For US equities, a couple hours after market closing at 22:00
+                // UTC.
+                var expectedAvailablePrice = (isTradegate && after16UTC) ? utcToday : utcToday.minusDays(1);
+
+                // For the time being, use a minimal calendar (weekends,
+                // christmas, new year). We can possibly switch to
+                // exchange-specific trade calendar, however, let's start with
+                // less aggressive caching. Do not use the trade calendar
+                // configured by the user.
+                var tradeCalendar = TradeCalendarManager.getInstance(TradeCalendarManager.MINIMAL_CALENDAR_CODE);
+
+                while (tradeCalendar.isHoliday(expectedAvailablePrice))
+                {
+                    expectedAvailablePrice = expectedAvailablePrice.minusDays(1);
+                }
+
+                if (lastPriceDate.equals(expectedAvailablePrice))
+                {
+                    // skip update b/c server cannot have newer data
+                    return new QuoteFeedData();
+                }
+            }
+
             // adjust request to Monday to enable more aggressive caching
-            quoteStartDate = security.getPrices().get(security.getPrices().size() - 1).getDate();
+            quoteStartDate = lastPriceDate;
             if (quoteStartDate.getDayOfWeek() != DayOfWeek.MONDAY)
                 quoteStartDate = quoteStartDate.with(TemporalAdjusters.previous(DayOfWeek.MONDAY));
         }
@@ -120,12 +186,7 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
     }
 
     @Override
-    public QuoteFeedData previewHistoricalQuotes(Security security)
-    {
-        return getHistoricalQuotes(security, true, LocalDate.now().minusMonths(2));
-    }
-
-    private QuoteFeedData getHistoricalQuotes(Security security, boolean collectRawResponse, LocalDate startDate)
+    public QuoteFeedData previewHistoricalQuotes(Security security) throws QuoteFeedException
     {
         if (security.getTickerSymbol() == null)
         {
@@ -133,11 +194,17 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
                             new IOException(MessageFormat.format(Messages.MsgMissingTickerSymbol, security.getName())));
         }
 
+        return getHistoricalQuotes(security, true, LocalDate.now().minusMonths(2));
+    }
+
+    private QuoteFeedData getHistoricalQuotes(Security security, boolean collectRawResponse, LocalDate startDate)
+                    throws QuoteFeedException
+    {
         var isSample = SAMPLE_SYMBOLS.contains(security.getTickerSymbol());
         var isAuthenticated = oauthClient != null && oauthClient.isAuthenticated();
 
         if (!isSample && !isAuthenticated)
-            return QuoteFeedData.withError(new IllegalArgumentException(Messages.LabelLoginToRetrieveHistoricalPrices));
+            throw new AuthenticationExpiredException(Messages.LabelLoginToRetrieveHistoricalPrices);
 
         Optional<AccessToken> accessToken = Optional.empty();
 
@@ -166,8 +233,11 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
 
             var to = LocalDate.now().atStartOfDay(ZoneOffset.UTC).toEpochSecond();
 
+            var version = FrameworkUtil.getBundle(PortfolioReportNet.class).getVersion().toString();
+
             @SuppressWarnings("nls")
             WebAccess webaccess = new WebAccess(ENDPOINT, isSample ? PATH_PREFIX_SAMPLE + PATH_HISTORIC : PATH_HISTORIC) //
+                            .addUserAgent("PortfolioPerformance/" + version) //$NON-NLS-1$
                             .addParameter("symbol", security.getTickerSymbol()) //
                             .addParameter("from",
                                             String.valueOf(startDate.atStartOfDay().toEpochSecond(ZoneOffset.UTC))) //
@@ -176,21 +246,33 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
             if (accessToken.isPresent())
                 webaccess.addBearer(accessToken.get().getToken());
 
-            String response = webaccess.get();
+            // check cache first
+
+            var response = cache.lookup(security.getTickerSymbol());
+            if (response == null || response.start.isAfter(startDate))
+            {
+                response = new CachedResponse();
+                response.start = startDate;
+                response.json = webaccess.get();
+
+                if (response.json != null)
+                    cache.put(security.getTickerSymbol(), response);
+            }
 
             if (collectRawResponse)
-                data.addResponse(webaccess.getURL(), response);
+                data.addResponse(webaccess.getURL(), response.json);
 
-            parseCandle(response, data);
+            parseCandle(response.json, data);
         }
         catch (WebAccessException e)
         {
             switch (e.getHttpErrorCode())
             {
                 case HttpStatus.SC_TOO_MANY_REQUESTS:
-                    throw new RateLimitExceededException();
+                    throw new RateLimitExceededException(Duration.ofMinutes(1),
+                                    MessageFormat.format(Messages.MsgRateLimitExceeded, getName()));
                 case HttpStatus.SC_NOT_FOUND, HttpStatus.SC_FORBIDDEN:
-                    throw new SecurityNotSupportedException();
+                    throw new FeedConfigurationException();
                 default:
                     data.addError(e);
             }
@@ -205,6 +287,9 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
 
     private void parseCandle(String response, QuoteFeedData data)
     {
+        if (response == null)
+            return;
+
         JSONObject json = (JSONObject) JSONValue.parse(response);
 
         String status = (String) json.get("s"); //$NON-NLS-1$
@@ -254,13 +339,13 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
     @Override
     public List<Exchange> getExchanges(Security subject, List<Exception> errors)
     {
-        var byIsin = true;
+        var parameter = "isin"; //$NON-NLS-1$
         var query = subject.getIsin();
 
         if (query == null || query.isBlank())
         {
-            byIsin = false;
-            query = subject.getTickerSymbolWithoutStockMarket();
+            parameter = "symbol"; //$NON-NLS-1$
+            query = subject.getTickerSymbol();
         }
 
         if (query == null || query.isBlank())
@@ -269,21 +354,14 @@ public final class PortfolioPerformanceFeed implements QuoteFeed
         try
         {
             var answer = new ArrayList<Exchange>();
-            var candidates = new PortfolioPerformanceSearchProvider().internalSearch(query);
+            var candidates = new PortfolioPerformanceSearchProvider().internalSearch(parameter, query);
 
             for (var candidate : candidates) // NOSONAR
             {
-                // sanity check if the query term is found in the identifier
-                if (byIsin && (candidate.getIsin() == null || !candidate.getIsin().contains(query)))
-                    continue;
-
-                if (!byIsin && (candidate.getSymbol() == null || !candidate.getSymbol().contains(query)))
-                    continue;
-
                 (candidate.getMarkets().isEmpty() ? List.of(candidate) : candidate.getMarkets()) //
                                 .stream().forEach(r -> {
-                                    var label = MessageFormat.format("{0} * {1} * {2}", //$NON-NLS-1$
-                                                    r.getName(), r.getCurrencyCode(),
+                                    var label = MessageFormat.format("{0} * {1}", //$NON-NLS-1$
+                                                    r.getCurrencyCode(),
                                                     MarketIdentifierCodes.getLabel(r.getExchange()));
                                     var exchange = new Exchange(r.getSymbol(), label);
                                     answer.add(exchange);

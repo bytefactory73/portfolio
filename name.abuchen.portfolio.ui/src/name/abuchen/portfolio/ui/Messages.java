@@ -491,14 +491,14 @@ public class Messages extends NLS
     public static String IntroNewAndNoteworthyText;
     public static String IntroNewFile;
     public static String IntroNewFileText;
-    public static String IntroOpenFAQ;
-    public static String IntroOpenFAQText;
     public static String IntroOpenFile;
     public static String IntroOpenFileText;
     public static String IntroOpenForum;
     public static String IntroOpenForumText;
     public static String IntroOpenHowtos;
     public static String IntroOpenHowtosText;
+    public static String IntroOpenManual;
+    public static String IntroOpenManualText;
     public static String IntroOpenSample;
     public static String IntroOpenSampleText;
     public static String InvestmentPlanAutoCreationJob;
@@ -556,6 +556,7 @@ public class Messages extends NLS
     public static String LabelAllInboundTransactions;
     public static String LabelAllOutboundTransactions;
     public static String LabelAllSecurities;
+    public static String LabelAllTimeHigh;
     public static String LabelAllTrades;
     public static String LabelAllTransactions;
     public static String LabelAspect;
@@ -598,8 +599,6 @@ public class Messages extends NLS
     public static String LabelChartDetailMarkerHighLow;
     public static String LabelChartDetailMarkerInvestments;
     public static String LabelChartDetailMarkerLow;
-    public static String LabelChartDetailMarkerPurchaseFIFO;
-    public static String LabelChartDetailMarkerPurchaseMovingAverage;
     public static String LabelChartDetailMarkerPurchasePeriodNo;
     public static String LabelChartDetailMovingAverage;
     public static String LabelChartDetailMovingAverage_100days;
@@ -656,6 +655,7 @@ public class Messages extends NLS
     public static String LabelCurrencyConverter;
     public static String LabelCurrentConfiguration;
     public static String LabelCurrentDate;
+    public static String LabelCurrentDrawdown;
     public static String LabelCurrentMonth;
     public static String LabelCurrentQuarter;
     public static String LabelCurrentWeek;
@@ -736,6 +736,8 @@ public class Messages extends NLS
     public static String LabelIRR;
     public static String LabelJSONDateFormat;
     public static String LabelJSONDateFormatHint;
+    public static String LabelJSONDateTimezone;
+    public static String LabelJSONDateTimezoneHint;
     public static String LabelJSONFactor;
     public static String LabelJSONFactorHint;
     public static String LabelJSONPathHint;
@@ -781,6 +783,7 @@ public class Messages extends NLS
     public static String LabelNormalSize;
     public static String LabelNotAvailable;
     public static String LabelNumberDataSeries;
+    public static String LabelNumberOfCandidates;
     public static String LabelOneOfX;
     public static String LabelOnlyLinkToPortfolioReport;
     public static String LabelOpenTrade;
@@ -816,6 +819,7 @@ public class Messages extends NLS
     public static String LabelPortfolioTimeMachine;
     public static String LabelPreTax;
     public static String LabelPreviousTradingDay;
+    public static String LabelPriceUpdateProgress;
     public static String LabelPurchasePrice;
     public static String LabelPurchaseTransactionsOnly;
     public static String LabelQuandlCode;
@@ -924,6 +928,7 @@ public class Messages extends NLS
     public static String LabelUseExistingSecurity;
     public static String LabelUseGrossValue;
     public static String LabelUser;
+    public static String LabelUseSecurityCurrency;
     public static String LabelUsingDashboardDefaultReportingPeriod;
     public static String LabelValueInboundDelivery;
     public static String LabelValueOutboundDelivery;
@@ -938,6 +943,7 @@ public class Messages extends NLS
     public static String LabelVolatility;
     public static String LabelWatchlist;
     public static String LabelWithoutClassification;
+    public static String LabelWithQualifier;
     public static String LabelXDays;
     public static String LabelYear;
     public static String LabelYearlyHeatmap;
@@ -1057,6 +1063,7 @@ public class Messages extends NLS
     public static String MsgAccountFromMissing;
     public static String MsgAccountMustBeDifferent;
     public static String MsgAccountToMissing;
+    public static String MsgAuthenticationExpired;
     public static String MsgCheckMissingTickerSymbol;
     public static String MsgConfirmInstall;
     public static String MsgCreateTransactionsAutomaticallyUponOpening;
@@ -1084,11 +1091,13 @@ public class Messages extends NLS
     public static String MsgHintNoAttributesConfigured;
     public static String MsgHintNoEvents;
     public static String MsgHintUseOutboundDeliveryForZeroTotal;
+    public static String MsgHistoricalPricesRequireSignIn;
     public static String MsgIncorrectConvertedSubTotal;
     public static String MsgIncorrectSubTotal;
     public static String MsgIncorrectTotal;
     public static String MsgInfoChangingCurrencyNotPossible;
     public static String MsgInfoRetiredSecurities;
+    public static String MsgInstrumentWithConfigurationIssue;
     public static String MsgInvalidImage;
     public static String MsgInvalidImageDetail;
     public static String MsgJavaVersionTooOldForLetsEncrypt;
@@ -1109,8 +1118,12 @@ public class Messages extends NLS
     public static String MsgPortfolioMustBeDifferent;
     public static String MsgPortfolioToMissing;
     public static String MsgPreviousStockSplit;
-    public static String MsgRestartRequired;
+    public static String MsgRateLimitExceeded;
+    public static String MsgRateLimitExceededAndRetrying;
+    public static String MsgRestartRequiredAfterGUIReset;
+    public static String MsgRestartRequiredAfterUpdate;
     public static String MsgSecurityHasNoQuotes;
+    public static String MsgSignedInAs;
     public static String MsgThemeRestartRequired;
     public static String MsgUpdatedXEntries;
     public static String MsgUpdateNewInVersionX;
@@ -1179,6 +1192,7 @@ public class Messages extends NLS
     public static String PrefCreateBackupBeforeSaving;
     public static String PrefDescriptionAlphaVantage;
     public static String PrefDescriptionCoingecko;
+    public static String PrefDescriptionCoinGeckoDemoAPIKey;
     public static String PrefDescriptionDivvyDiary;
     public static String PrefDescriptionEODHistoricalData;
     public static String PrefDescriptionFinnhub;
@@ -1223,8 +1237,10 @@ public class Messages extends NLS
     public static String PrefTitleAPIKeys;
     public static String PrefTitleBackup;
     public static String PrefTitleCalendar;
+    public static String PrefTitleDemoAPIKey;
     public static String PrefTitleDivvyDiary;
     public static String PrefTitleEODHistoricalData;
+    public static String PrefTitleExperimentalFeatures;
     public static String PrefTitleFinnhub;
     public static String PrefTitleFormatting;
     public static String PrefTitleGeneral;
@@ -1248,6 +1264,7 @@ public class Messages extends NLS
     public static String RebalanceInexactTooltip;
     public static String RebalancingChartActualVsTarget;
     public static String SearchSecurityWizardPageSymbolAlreadyExistsInfo;
+    public static String SecuritiesChart_MaxSecuritiesReachedForBenchmarkHint;
     public static String SecuritiesChart_NoDataMessage_NoHoldings;
     public static String SecuritiesChart_NoDataMessage_NoPrices;
     public static String SecuritiesChart_NoDataMessage_NoPricesInSelectedPeriod;
@@ -1339,6 +1356,9 @@ public class Messages extends NLS
     public static String SecurityTabTransactions;
     public static String SharpeRatioRisklessIRR;
     public static String SiteAppLandingpage;
+    public static String SiteForum;
+    public static String SiteHowTo;
+    public static String SiteManual;
     public static String SiteNewAndNoteworthy;
     public static String SplitWizardDefinitionDescription;
     public static String SplitWizardDefinitionTitle;
@@ -1358,7 +1378,9 @@ public class Messages extends NLS
     public static String TabTransactions;
     public static String TitlePasswordDialog;
     public static String TooltipAllTimeHigh;
+    public static String TooltipAllTimeHighWidget;
     public static String TooltipAverageHoldingPeriod;
+    public static String TooltipCurrentDrawdown;
     public static String TooltipDateOfExchangeRate;
     public static String TooltipHintPressAlt;
     public static String TooltipMaxDrawdown;
@@ -1391,6 +1413,7 @@ public class Messages extends NLS
     public static String TransactionFilterTaxes;
     public static String TransactionFilterTransfers;
     public static String Url;
+    public static String MsgWarningWayland;
     public static String WatchlistDelete;
     public static String WatchlistEditDialog;
     public static String WatchlistEditDialogMsg;

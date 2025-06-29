@@ -12,6 +12,7 @@ import org.json.simple.JSONValue;
 
 import name.abuchen.portfolio.Messages;
 import name.abuchen.portfolio.online.SecuritySearchProvider;
+import name.abuchen.portfolio.util.OnlineHelper;
 import name.abuchen.portfolio.util.WebAccess;
 
 public class YahooSearchProvider implements SecuritySearchProvider
@@ -52,6 +53,7 @@ public class YahooSearchProvider implements SecuritySearchProvider
     {
         @SuppressWarnings("nls")
         String html = new WebAccess("query2.finance.yahoo.com", "/v1/finance/lookup") //
+                        .addUserAgent(OnlineHelper.getYahooFinanceUserAgent()) //
                         .addParameter("formatted", "true") //
                         .addParameter("lang", "de-DE").addParameter("region", "DE") //
                         .addParameter("query", query) //

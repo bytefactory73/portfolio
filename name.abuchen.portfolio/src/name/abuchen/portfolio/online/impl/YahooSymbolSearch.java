@@ -14,8 +14,9 @@ import name.abuchen.portfolio.Messages;
 import name.abuchen.portfolio.PortfolioLog;
 import name.abuchen.portfolio.model.Client;
 import name.abuchen.portfolio.model.Security;
-import name.abuchen.portfolio.online.SecuritySearchProvider;
 import name.abuchen.portfolio.online.SecuritySearchProvider.ResultItem;
+import name.abuchen.portfolio.online.SecurityType;
+import name.abuchen.portfolio.util.OnlineHelper;
 import name.abuchen.portfolio.util.WebAccess;
 import name.abuchen.portfolio.util.WebAccess.WebAccessException;
 
@@ -48,7 +49,7 @@ import name.abuchen.portfolio.util.WebAccess.WebAccessException;
 
             // Convert the security type using the SecuritySearchProvider
             // instance
-            type = SecuritySearchProvider.convertType(type);
+            type = SecurityType.convertType(type);
 
             var exchange = (String) json.get("exchDisp"); //$NON-NLS-1$
             if (exchange == null)
@@ -113,6 +114,12 @@ import name.abuchen.portfolio.util.WebAccess.WebAccessException;
         }
 
         @Override
+        public String getFeedId()
+        {
+            return YahooFinanceQuoteFeed.ID;
+        }
+
+        @Override
         public Security create(Client client)
         {
             var security = new Security(name, client.getBaseCurrency());
@@ -130,6 +137,7 @@ import name.abuchen.portfolio.util.WebAccess.WebAccessException;
         {
             @SuppressWarnings("nls")
             var html = new WebAccess("query2.finance.yahoo.com", "/v1/finance/search") //
+                            .addUserAgent(OnlineHelper.getYahooFinanceUserAgent()) //
                             .addParameter("q", query) //
                             .addParameter("region", "DE") //
                             .addParameter("lang", "de-DE") //

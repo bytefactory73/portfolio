@@ -36,7 +36,7 @@ public class TradeCollector
      * processed before transfers (for example if the users purchases and then
      * transfers on the same day).
      */
-    private static final class ByDateAndType implements Comparator<TransactionPair<?>>, Serializable
+    public static final class ByDateAndType implements Comparator<TransactionPair<?>>, Serializable
     {
         private static final long serialVersionUID = 1L;
 
@@ -46,20 +46,31 @@ public class TradeCollector
             var dt1 = t1.getTransaction().getDateTime();
             var dt2 = t2.getTransaction().getDateTime();
 
-            // the date differs, just sort by date (no need to check types)
-            if (dt1.getYear() != dt2.getYear() || dt1.getMonth() != dt2.getMonth()
-                            || dt1.getDayOfMonth() != dt2.getDayOfMonth())
-                return dt1.compareTo(dt2);
+            // Compare year, month, day
+            if (dt1.getYear() != dt2.getYear())
+                return Integer.compare(dt1.getYear(), dt2.getYear());
+            if (dt1.getMonthValue() != dt2.getMonthValue())
+                return Integer.compare(dt1.getMonthValue(), dt2.getMonthValue());
+            if (dt1.getDayOfMonth() != dt2.getDayOfMonth())
+                return Integer.compare(dt1.getDayOfMonth(), dt2.getDayOfMonth());
 
-            var hasTime1 = dt1.getHour() != 0 || dt1.getMinute() != 0;
-            var hasTime2 = dt2.getHour() != 0 || dt2.getMinute() != 0;
+            // Adjust hour and minute if both are 00:00
+            int hour1 = (dt1.getHour() == 0 && dt1.getMinute() == 0) ? 12 : dt1.getHour();
+            int minute1 = (dt1.getHour() == 0 && dt1.getMinute() == 0) ? 0 : dt1.getMinute();
 
-            // if both transactions have a time, then sort by time
-            if (hasTime1 && hasTime2)
-                return dt1.compareTo(dt2);
+            int hour2 = (dt2.getHour() == 0 && dt2.getMinute() == 0) ? 12 : dt2.getHour();
+            int minute2 = (dt2.getHour() == 0 && dt2.getMinute() == 0) ? 0 : dt2.getMinute();
+
+            // Compare hour
+            if (hour1 != hour2)
+                return Integer.compare(hour1, hour2);
+
+            // Compare minute
+            if (minute1 != minute2)
+                return Integer.compare(minute1, minute2);
 
             // otherwise sort: inbounds, transfers, outbounds
-            return getSortOrder(t1) - getSortOrder(t2);
+            return Integer.compare(getSortOrder(t1), getSortOrder(t2));
         }
 
         /**
@@ -123,13 +134,11 @@ public class TradeCollector
             Type type = t.getType();
             switch (type)
             {
-                case BUY:
-                case DELIVERY_INBOUND:
+                case BUY, DELIVERY_INBOUND:
                     openTransactions.computeIfAbsent(portfolio, p -> new ArrayList<>()).add(pair);
                     break;
 
-                case SELL:
-                case DELIVERY_OUTBOUND:
+                case SELL, DELIVERY_OUTBOUND:
                     trades.add(createNewTradeFromSell(openTransactions, pair));
                     break;
 
@@ -165,7 +174,7 @@ public class TradeCollector
             trades.add(newTrade);
         }
 
-        trades.forEach(t -> t.calculate(converter));
+        trades.forEach(t -> t.calculate(client, converter));
 
         return trades;
     }
@@ -299,7 +308,7 @@ public class TradeCollector
         PortfolioTransaction t = entry.getPortfolioTransaction();
 
         BuySellEntry copy = new BuySellEntry();
-        copy.setPortfolio(entry.getPortfolio());
+        copy.setPortfolio(portfolio);
         copy.setAccount(entry.getAccount());
 
         copy.setDate(t.getDateTime());

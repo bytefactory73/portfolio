@@ -206,22 +206,41 @@ public class KBCGroupNVPDFExtractor extends AbstractPDFExtractor
                             t.setAmount(asAmount(v.get("amount")));
                         })
 
-                        // @formatter:off
-                        // 1 USD = 0,932651 EUR
-                        // Netto credit 69.606,12 USD
-                        // @formatter:on
-                        .section("termCurrency", "exchangeRate", "baseCurrency", "gross").optional() //
-                        .match("^[\\.,\\d]+ (?<baseCurrency>[A-Z]{3}) = (?<exchangeRate>[\\.,\\d]+) (?<termCurrency>[A-Z]{3})$") //
-                        .match("^Netto (debit|credit) (\\-)?(?<gross>[\\.,\\d]+) [A-Z]{3}$") //
-                        .assign((t, v) -> {
-                            var rate = asExchangeRate(v);
-                            type.getCurrentContext().putType(rate);
+                        .optionalOneOf( //
+                                        // @formatter:off
+                                        // Netto debit -10.718,20 USD
+                                        // Wisselkoers 1 EUR = 1,065446 USD
+                                        // @formatter:on
+                                        section -> section //
+                                                        .attributes("gross", "baseCurrency", "exchangeRate", "termCurrency") //
+                                                        .match("^Netto (debit|credit) (\\-)?(?<gross>[\\.,\\d]+) [A-Z]{3}$") //
+                                                        .match("^Wisselkoers [\\.,\\d]+ (?<baseCurrency>[A-Z]{3}) = (?<exchangeRate>[\\.,\\d]+) (?<termCurrency>[A-Z]{3})$") //
+                                                        .assign((t, v) -> {
+                                                            var rate = asExchangeRate(v);
+                                                            type.getCurrentContext().putType(rate);
 
-                            var gross = Money.of(rate.getBaseCurrency(), asAmount(v.get("gross")));
-                            var fxGross = rate.convert(rate.getTermCurrency(), gross);
+                                                            var gross = Money.of(rate.getTermCurrency(), asAmount(v.get("gross")));
+                                                            var fxGross = rate.convert(rate.getBaseCurrency(), gross);
 
-                            checkAndSetGrossUnit(gross, fxGross, t, type.getCurrentContext());
-                        })
+                                                            checkAndSetGrossUnit(gross, fxGross, t, type.getCurrentContext());
+                                                        }),
+                                        // @formatter:off
+                                        // 1 USD = 0,932651 EUR
+                                        // Netto credit 69.606,12 USD
+                                        // @formatter:on
+                                        section -> section //
+                                                        .attributes("baseCurrency", "exchangeRate", "termCurrency", "gross") //
+                                                        .match("^[\\.,\\d]+ (?<baseCurrency>[A-Z]{3}) = (?<exchangeRate>[\\.,\\d]+) (?<termCurrency>[A-Z]{3})$") //
+                                                        .match("^Netto (debit|credit) (\\-)?(?<gross>[\\.,\\d]+) [A-Z]{3}$") //
+                                                        .assign((t, v) -> {
+                                                            var rate = asExchangeRate(v);
+                                                            type.getCurrentContext().putType(rate);
+
+                                                            var gross = Money.of(rate.getBaseCurrency(), asAmount(v.get("gross")));
+                                                            var fxGross = rate.convert(rate.getTermCurrency(), gross);
+
+                                                            checkAndSetGrossUnit(gross, fxGross, t, type.getCurrentContext());
+                                                        }))
 
                         // @formatter:off
                         // Borderel 275825809 Limit order
@@ -259,14 +278,29 @@ public class KBCGroupNVPDFExtractor extends AbstractPDFExtractor
 
                         .oneOf( //
                                         // @formatter:off
+                                        // Uw Uitbetaling dividenden van 43 CP ALBEMARLE CORP (NY) 14.12.23 aan 0,4 17,20 USD
+                                        // USD
+                                        // Cash Dividend US0126531013ex 2023-12-14 pd 2024-01-02
+                                        // @formatter:on
+                                        section -> section //
+                                                        .attributes("name", "currency", "isin") //
+                                                        .match("^.* van [\\.,\\d]+ (?<name>.*) aan [\\.,\\d]+ [\\.,\\d]+ [A-Z]{3}$") //
+                                                        .match("^(?<currency>[A-Z]{3})$") //
+                                                        .match("^Cash Dividend (?<isin>[A-Z]{2}[A-Z0-9]{9}[0-9]).*$") //
+                                                        .assign((t, v) -> t.setSecurity(getOrCreateSecurity(v))),
+                                        // @formatter:off
                                         // Uw Uitbetaling dividenden van 2.065 ISHAR.III CORE EUR CORP BD UC ETF-D 4.173,16 EUR
                                         // aan 2,020901 EUR
                                         // Cash Dividend IE00B3F81R35ex 2024-01-11 pd 2024-01-24
+                                        //
+                                        // Uw Uitbetaling dividenden van 912 ISHAR.III CORE EUR CORP BD UC 1.860,12 EUR
+                                        // ETF-D aan 2,039605 EUR
+                                        // Cash Dividend IE00B3F81R35ex 2025-01-16 pd 2025-01-29
                                         // @formatter:on
                                         section -> section //
                                                         .attributes("name", "currency", "isin") //
                                                         .match("^.* van [\\.,\\d]+ (?<name>.*) [\\.,\\d]+ [A-Z]{3}$") //
-                                                        .match("^aan [\\.,\\d]+ (?<currency>[A-Z]{3})$") //
+                                                        .match("^.*aan [\\.,\\d]+ (?<currency>[A-Z]{3})$") //
                                                         .match("^Cash Dividend (?<isin>[A-Z]{2}[A-Z0-9]{9}[0-9]).*$") //
                                                         .assign((t, v) -> t.setSecurity(getOrCreateSecurity(v))),
                                         // @formatter:off
@@ -320,6 +354,24 @@ public class KBCGroupNVPDFExtractor extends AbstractPDFExtractor
                                                             var fxGross = rate.convert(rate.getBaseCurrency(), gross);
 
                                                             checkAndSetGrossUnit(gross, fxGross, t, type.getCurrentContext());
+                                                        }),
+                                        // @formatter:off
+                                        // Uw Uitbetaling dividenden van 43 CP ALBEMARLE CORP (NY) 14.12.23 aan 0,4 17,20 USD
+                                        // USD
+                                        // Wisselkoers 1 EUR = 1,10952 USD
+                                        // @formatter:on
+                                        section -> section //
+                                                        .attributes("gross", "baseCurrency", "exchangeRate", "termCurrency") //
+                                                        .match("^.* aan [\\.,\\d]+ (?<gross>[\\.,\\d]+) [A-Z]{3}$") //
+                                                        .match("^Wisselkoers [\\.,\\d]+ (?<baseCurrency>[A-Z]{3}) = (?<exchangeRate>[\\.,\\d]+) (?<termCurrency>[A-Z]{3})$") //
+                                                        .assign((t, v) -> {
+                                                            var rate = asExchangeRate(v);
+                                                            type.getCurrentContext().putType(rate);
+
+                                                            var gross = Money.of(rate.getTermCurrency(), asAmount(v.get("gross")));
+                                                            var fxGross = rate.convert(rate.getBaseCurrency(), gross);
+
+                                                            checkAndSetGrossUnit(gross, fxGross, t, type.getCurrentContext());
                                                         }))
 
                         // @formatter:off
@@ -357,7 +409,7 @@ public class KBCGroupNVPDFExtractor extends AbstractPDFExtractor
                         .section("date", "note", "amount", "currency") //
                         .match("^(?<date>[\\d]{2}\\/[\\d]{2}\\/[\\d]{4}) " //
                                         + "(?<note>Provisionering rekening klant) " //
-                                        + "Valuta [\\d]{2}\\/[\\d]{2}\\/[\\d]{4} " //
+                                        + "Valuta[\\s]*[\\d]{2}\\/[\\d]{2}\\/[\\d]{4} " //
                                         + "(?<amount>[\\.,\\d]+) (?<currency>[A-Z]{3})$") //
                         .assign((t, v) -> {
                             t.setDateTime(asDate(v.get("date")));
@@ -370,6 +422,7 @@ public class KBCGroupNVPDFExtractor extends AbstractPDFExtractor
 
         // @formatter:off
         // 04/09/2024 Overschrijving naar klant Valuta 04/09/2024 -32.339,70 EUR
+        // 30/01/2025 Overschrijving naar klant Valuta30/01/2025 -1.275,00 EUR
         // @formatter:on
         var removalBlock = new Block("^[\\d]{2}\\/[\\d]{2}\\/[\\d]{4} Overschrijving naar klant.*$");
         type.addBlock(removalBlock);
@@ -385,6 +438,34 @@ public class KBCGroupNVPDFExtractor extends AbstractPDFExtractor
                         .section("date", "note", "amount", "currency") //
                         .match("^(?<date>[\\d]{2}\\/[\\d]{2}\\/[\\d]{4}) " //
                                         + "(?<note>Overschrijving naar klant) " //
+                                        + "Valuta[\\s]*[\\d]{2}\\/[\\d]{2}\\/[\\d]{4} " //
+                                        + "\\-(?<amount>[\\.,\\d]+) (?<currency>[A-Z]{3})$") //
+                        .assign((t, v) -> {
+                            t.setDateTime(asDate(v.get("date")));
+                            t.setCurrencyCode(asCurrencyCode(v.get("currency")));
+                            t.setAmount(asAmount(v.get("amount")));
+                            t.setNote(v.get("note"));
+                        })
+
+                        .wrap(TransactionItem::new));
+
+        // @formatter:off
+        // 05/08/2024 Bewaarloon Valuta 05/08/2024 -179,48 EUR
+        // @formatter:on
+        var feesBlock = new Block("^[\\d]{2}\\/[\\d]{2}\\/[\\d]{4} Bewaarloon.*$");
+        type.addBlock(feesBlock);
+        feesBlock.setMaxSize(1);
+        feesBlock.set(new Transaction<AccountTransaction>()
+
+                        .subject(() -> {
+                            var accountTransaction = new AccountTransaction();
+                            accountTransaction.setType(AccountTransaction.Type.FEES);
+                            return accountTransaction;
+                        })
+
+                        .section("date", "note", "amount", "currency") //
+                        .match("^(?<date>[\\d]{2}\\/[\\d]{2}\\/[\\d]{4}) " //
+                                        + "(?<note>Bewaarloon) " //
                                         + "Valuta [\\d]{2}\\/[\\d]{2}\\/[\\d]{4} " //
                                         + "\\-(?<amount>[\\.,\\d]+) (?<currency>[A-Z]{3})$") //
                         .assign((t, v) -> {
@@ -440,6 +521,13 @@ public class KBCGroupNVPDFExtractor extends AbstractPDFExtractor
     private <T extends Transaction<?>> void addFeesSectionsTransaction(T transaction, DocumentType type)
     {
         transaction //
+
+                        // @formatter:off
+                        // Sec Fee USA 0,05 USD
+                        // @formatter:on
+                        .section("fee", "currency").optional() //
+                        .match("^Sec Fee .* (?<fee>[\\.,\\d]+) (?<currency>[A-Z]{3})$") //
+                        .assign((t, v) -> processFeeEntries(t, v, type))
 
                         // @formatter:off
                         // Makelaarsloon 7,50 EUR

@@ -13,6 +13,7 @@ import org.eclipse.core.databinding.validation.ValidationStatus;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.layout.TableColumnLayout;
 import org.eclipse.swt.SWT;
@@ -58,9 +59,9 @@ public class HistoricalQuoteProviderPage extends AbstractQuoteProviderPage
     // whether a more recent job has already been started
     private LoadHistoricalQuotes currentJob;
 
-    public HistoricalQuoteProviderPage(final EditSecurityModel model, BindingHelper bindings)
+    public HistoricalQuoteProviderPage(final EditSecurityModel model, EditSecurityCache cache, BindingHelper bindings)
     {
-        super(model, bindings);
+        super(model, cache, bindings);
 
         setTitle(Messages.EditWizardQuoteFeedTitle);
 
@@ -119,6 +120,12 @@ public class HistoricalQuoteProviderPage extends AbstractQuoteProviderPage
     protected String getJSONDateFormatPropertyName()
     {
         return GenericJSONQuoteFeed.DATE_FORMAT_PROPERTY_NAME_HISTORIC;
+    }
+
+    @Override
+    protected String getJSONDateTimezonePropertyName()
+    {
+        return GenericJSONQuoteFeed.DATE_TIMEZONE_PROPERTY_NAME_HISTORIC;
     }
 
     @Override
@@ -256,6 +263,8 @@ public class HistoricalQuoteProviderPage extends AbstractQuoteProviderPage
                                             .getFeedProperty(GenericJSONQuoteFeed.CLOSE_PROPERTY_NAME_HISTORIC))
                             + String.valueOf(getModel()
                                             .getFeedProperty(GenericJSONQuoteFeed.DATE_FORMAT_PROPERTY_NAME_HISTORIC))
+                            + String.valueOf(getModel()
+                                            .getFeedProperty(GenericJSONQuoteFeed.DATE_TIMEZONE_PROPERTY_NAME_HISTORIC))
                             + String.valueOf(
                                             getModel().getFeedProperty(GenericJSONQuoteFeed.LOW_PROPERTY_NAME_HISTORIC))
                             + String.valueOf(getModel()
@@ -295,6 +304,7 @@ public class HistoricalQuoteProviderPage extends AbstractQuoteProviderPage
 
             Job job = new LoadHistoricalQuotes(feed, exchange, cacheKey);
             job.setUser(false);
+            job.setRule(SingletonRule.getInstance());
             job.schedule(150);
         }
     }
@@ -385,5 +395,31 @@ public class HistoricalQuoteProviderPage extends AbstractQuoteProviderPage
             return Status.OK_STATUS;
         }
 
+    }
+
+    private static class SingletonRule implements ISchedulingRule // NOSONAR
+    {
+        private static final SingletonRule INSTANCE = new SingletonRule();
+
+        private SingletonRule()
+        {
+        }
+
+        public static SingletonRule getInstance()
+        {
+            return INSTANCE;
+        }
+
+        @Override
+        public boolean isConflicting(ISchedulingRule rule)
+        {
+            return rule == this;
+        }
+
+        @Override
+        public boolean contains(ISchedulingRule rule)
+        {
+            return rule == this;
+        }
     }
 }

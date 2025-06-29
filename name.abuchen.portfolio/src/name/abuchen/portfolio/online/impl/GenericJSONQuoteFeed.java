@@ -6,18 +6,25 @@ import java.math.RoundingMode;
 import java.net.URISyntaxException;
 import java.text.MessageFormat;
 import java.text.ParseException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoField;
+import java.time.temporal.TemporalAccessor;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.JsonPathException;
@@ -33,6 +40,7 @@ import name.abuchen.portfolio.model.SecurityProperty;
 import name.abuchen.portfolio.money.Values;
 import name.abuchen.portfolio.online.QuoteFeed;
 import name.abuchen.portfolio.online.QuoteFeedData;
+import name.abuchen.portfolio.online.QuoteFeedException;
 import name.abuchen.portfolio.online.impl.variableurl.Factory;
 import name.abuchen.portfolio.online.impl.variableurl.urls.VariableURL;
 import name.abuchen.portfolio.util.OnlineHelper;
@@ -44,6 +52,7 @@ public class GenericJSONQuoteFeed implements QuoteFeed
     public static final String ID = "GENERIC-JSON"; //$NON-NLS-1$
     public static final String DATE_PROPERTY_NAME_HISTORIC = "GENERIC-JSON-DATE"; //$NON-NLS-1$
     public static final String DATE_FORMAT_PROPERTY_NAME_HISTORIC = "GENERIC-JSON-DATE-FORMAT"; //$NON-NLS-1$
+    public static final String DATE_TIMEZONE_PROPERTY_NAME_HISTORIC = "GENERIC-JSON-DATE-TIMEZONE"; //$NON-NLS-1$
     public static final String CLOSE_PROPERTY_NAME_HISTORIC = "GENERIC-JSON-CLOSE"; //$NON-NLS-1$
     public static final String HIGH_PROPERTY_NAME_HISTORIC = "GENERIC-JSON-HIGH"; //$NON-NLS-1$
     public static final String LOW_PROPERTY_NAME_HISTORIC = "GENERIC-JSON-LOW"; //$NON-NLS-1$
@@ -51,6 +60,7 @@ public class GenericJSONQuoteFeed implements QuoteFeed
     public static final String VOLUME_PROPERTY_NAME_HISTORIC = "GENERIC-JSON-VOLUME"; //$NON-NLS-1$
     public static final String DATE_PROPERTY_NAME_LATEST = "GENERIC-JSON-DATE-LATEST"; //$NON-NLS-1$
     public static final String DATE_FORMAT_PROPERTY_NAME_LATEST = "GENERIC-JSON-DATE-FORMAT-LATEST"; //$NON-NLS-1$
+    public static final String DATE_TIMEZONE_PROPERTY_NAME_LATEST = "GENERIC-JSON-DATE-TIMEZONE-LATEST"; //$NON-NLS-1$
     public static final String CLOSE_PROPERTY_NAME_LATEST = "GENERIC-JSON-CLOSE-LATEST"; //$NON-NLS-1$
     public static final String HIGH_PROPERTY_NAME_LATEST = "GENERIC-JSON-HIGH-LATEST"; //$NON-NLS-1$
     public static final String LOW_PROPERTY_NAME_LATEST = "GENERIC-JSON-LOW-LATEST"; //$NON-NLS-1$
@@ -69,6 +79,19 @@ public class GenericJSONQuoteFeed implements QuoteFeed
     public String getName()
     {
         return "JSON"; //$NON-NLS-1$
+    }
+
+    @Override
+    public String getGroupingCriterion(Security security)
+    {
+        return getCriterionFrom(security.getFeedURL());
+    }
+
+    @Override
+    public String getLatestGroupingCriterion(Security security)
+    {
+        String latestFeed = security.getLatestFeed();
+        return getCriterionFrom(latestFeed != null && !latestFeed.isEmpty() ? latestFeed : security.getFeedURL());
     }
 
     @Override
@@ -91,8 +114,11 @@ public class GenericJSONQuoteFeed implements QuoteFeed
 
     public String getJson(String url) throws IOException, URISyntaxException
     {
-        return new WebAccess(url).addUserAgent(OnlineHelper.getUserAgent()).addHeader("Accept", "application/json") //$NON-NLS-1$ //$NON-NLS-2$
-                        .get();
+        var userAgent = url.contains("finance.yahoo.com") //$NON-NLS-1$
+                        ? OnlineHelper.getYahooFinanceUserAgent()
+                        : OnlineHelper.getUserAgent();
+
+        return new WebAccess(url).addUserAgent(userAgent).addHeader("Accept", "application/json").get(); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     private QuoteFeedData getHistoricalQuotes(Security security, String feedURL, boolean collectRawResponse,
@@ -102,6 +128,8 @@ public class GenericJSONQuoteFeed implements QuoteFeed
                         isLatest ? DATE_PROPERTY_NAME_LATEST : DATE_PROPERTY_NAME_HISTORIC);
         Optional<String> dateFormatProperty = security.getPropertyValue(SecurityProperty.Type.FEED,
                         isLatest ? DATE_FORMAT_PROPERTY_NAME_LATEST : DATE_FORMAT_PROPERTY_NAME_HISTORIC);
+        Optional<String> dateTimezoneProperty = security.getPropertyValue(SecurityProperty.Type.FEED,
+                        isLatest ? DATE_TIMEZONE_PROPERTY_NAME_LATEST : DATE_TIMEZONE_PROPERTY_NAME_HISTORIC);
         Optional<String> closeProperty = security.getPropertyValue(SecurityProperty.Type.FEED,
                         isLatest ? CLOSE_PROPERTY_NAME_LATEST : CLOSE_PROPERTY_NAME_HISTORIC);
         Optional<String> highProperty = security.getPropertyValue(SecurityProperty.Type.FEED,
@@ -162,7 +190,8 @@ public class GenericJSONQuoteFeed implements QuoteFeed
 
             if (json != null)
                 newPricesByDate.addAll(parse(url, json, dateProperty.get(), closeProperty.get(), data,
-                                dateFormatProperty, lowProperty, highProperty, factorProperty, volumeProperty));
+                                dateFormatProperty, dateTimezoneProperty, lowProperty, highProperty, factorProperty,
+                                volumeProperty));
 
             if (newPricesByDate.size() > sizeBefore)
                 failedAttempts = 0;
@@ -178,7 +207,7 @@ public class GenericJSONQuoteFeed implements QuoteFeed
     }
 
     @Override
-    public Optional<LatestSecurityPrice> getLatestQuote(Security security)
+    public Optional<LatestSecurityPrice> getLatestQuote(Security security) throws QuoteFeedException
     {
         // if latestFeed is null, then the policy is 'use same configuration
         // as historic quotes'
@@ -203,8 +232,9 @@ public class GenericJSONQuoteFeed implements QuoteFeed
     }
 
     protected List<LatestSecurityPrice> parse(String url, String json, String datePath, String closePath,
-                    QuoteFeedData data, Optional<String> dateFormat, Optional<String> lowPath,
-                    Optional<String> highPath, Optional<String> factorString, Optional<String> volumePath)
+                    QuoteFeedData data, Optional<String> dateFormat, Optional<String> dateTimezone,
+                    Optional<String> lowPath, Optional<String> highPath, Optional<String> factorString,
+                    Optional<String> volumePath)
     {
         try
         {
@@ -265,7 +295,7 @@ public class GenericJSONQuoteFeed implements QuoteFeed
 
                 // date
                 Object object = dates.get(index);
-                price.setDate(this.extractDate(object, dateFormat));
+                price.setDate(this.extractDate(object, dateFormat, dateTimezone));
 
                 // close
                 object = close.get(index);
@@ -337,39 +367,67 @@ public class GenericJSONQuoteFeed implements QuoteFeed
         return 0;
     }
 
-    /* testing */ LocalDate extractDate(Object object, Optional<String> dateFormat)
+    @VisibleForTesting
+    /* testing */ LocalDate extractDate(Object object, Optional<String> dateFormat, Optional<String> dateTimezone)
     {
+        final ZoneOffset offset = dateTimezone.isPresent()
+                        ? ZoneId.of(dateTimezone.get()).getRules().getOffset(Instant.now())
+                        : ZoneOffset.UTC;
+
         if (dateFormat.isPresent())
         {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dateFormat.get());
-            return LocalDate.parse(object.toString(), formatter);
+            return parseDate(object.toString(), formatter, offset);
         }
 
         if (object instanceof String s)
         {
-            try
+
+            List<DateTimeFormatter> formatters = Arrays.asList(DateTimeFormatter.ISO_ZONED_DATE_TIME,
+                            DateTimeFormatter.ISO_DATE_TIME, DateTimeFormatter.ISO_DATE);
+
+            for (DateTimeFormatter formatter : formatters)
             {
-                return YahooHelper.fromISODate(s);
+                try
+                {
+                    return parseDate(s, formatter, offset);
+                }
+                catch (DateTimeParseException e)
+                {
+                    // Try next formatter
+                }
             }
-            catch (DateTimeParseException e)
-            {
-                return parseDateTimestamp(Long.parseLong(s));
-            }
+
+            return parseDateTimestamp(Long.parseLong(s), offset);
         }
         else if (object instanceof Long l)
-            return parseDateTimestamp(l);
+            return parseDateTimestamp(l, offset);
         else if (object instanceof Integer i)
-            return parseDateTimestamp(Long.valueOf(i));
+            return parseDateTimestamp(Long.valueOf(i), offset);
         else if (object instanceof Double d)
-            return parseDateTimestamp(d.longValue());
+            return parseDateTimestamp(d.longValue(), offset);
         else if (object instanceof LocalDate date)
-            return date;
+            return applyOffset(date.atTime(LocalTime.MAX), offset).toLocalDate();
         return null;
     }
 
-    private LocalDate parseDateTimestamp(Long object)
+    private LocalDate parseDate(String dateString, DateTimeFormatter formatter, ZoneOffset offset)
     {
-        Long futureEpoch = LocalDateTime.of(2200, 1, 1, 0, 0, 0, 0).toEpochSecond(ZoneOffset.UTC);
+        TemporalAccessor parsed = formatter.parse(dateString);
+        LocalDate date = LocalDate.from(parsed);
+        LocalTime time = parsed.isSupported(ChronoField.HOUR_OF_DAY) ? LocalTime.from(parsed) : LocalTime.MAX;
+
+        return applyOffset(LocalDateTime.of(date, time), offset).toLocalDate();
+    }
+
+    private static LocalDateTime applyOffset(LocalDateTime localTime, ZoneOffset offset)
+    {
+        return localTime.atOffset(ZoneOffset.UTC).withOffsetSameInstant(offset).toLocalDateTime();
+    }
+
+    private LocalDate parseDateTimestamp(Long object, ZoneOffset offset)
+    {
+        Long futureEpoch = LocalDateTime.of(2200, 1, 1, 0, 0, 0, 0).toEpochSecond(offset);
 
         if (object > futureEpoch)
         {
@@ -389,9 +447,8 @@ public class GenericJSONQuoteFeed implements QuoteFeed
             object = object * 24 * 60 * 60;
         }
         // The following does NOT do a time zone conversion. If the API gives
-        // epochs as dates,
-        // we always convert them to dates with respect to UTC (independent of
-        // the user timezone).
-        return LocalDateTime.ofEpochSecond(object, 0, ZoneOffset.UTC).toLocalDate();
+        // epochs as dates, we always convert them to dates with respect to the
+        // time zone provided by the user (UTC by default).
+        return LocalDateTime.ofEpochSecond(object, 0, offset).toLocalDate();
     }
 }
